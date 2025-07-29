@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>股票分析</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <h2>股票分析系统</h2>
+    <form method="post">
+        <input type="text" name="symbol" placeholder="输入股票代码" required>
+        <input type="submit" value="查询">
+    </form>
+
+    {% if stock %}
+        <h3>{{ stock.symbol or '' }} 当前价格: {{ stock.current }}</h3>
+        <p>建议：{{ stock.suggest }}</p>
+        <p>逻辑依据：{{ stock.logic }}</p>
+        <p>建议买入价：{{ stock.buy }}，卖出价：{{ stock.sell }}</p>
+    {% endif %}
+
+    {% if kline.t %}
+        <div id="chart"></div>
+        <script>
+            var trace = {
+                x: {{ kline.t | safe }},
+                y: {{ kline.c | safe }},
+                mode: 'lines',
+                name: '收盘价'
+            };
+            Plotly.newPlot('chart', [trace]);
+        </script>
+    {% endif %}
+
+    {% if recommend %}
+        <h4>推荐股票：{{ recommend.symbol }}</h4>
+        <p>价格：{{ recommend.price }}，建议买入：{{ recommend.suggest_buy }}，卖出：{{ recommend.suggest_sell }}</p>
+        <p>理由：{{ recommend.reason }}</p>
+    {% endif %}
+</body>
+</html>
