@@ -1,66 +1,143 @@
 import streamlit as st
-from utils.data import fetch_stock_data, fetch_latest_price, fetch_news
-from utils.indicators import compute_indicators
-from utils.plots import plot_candlestick_with_indicators
-from utils.stock_utils import recommend_stocks
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+import datetime
+from utils.stock_utils import (
+    fetch_recommendation,
+    fetch_stock_data,
+    calculate_indicators,
+    format_analysis
+)
 
-st.set_page_config(layout="wide", page_title="美股分析系统")
+st.set_page_config(layout="wide")
 
-# ⬆️ 顶部推荐区
-st.title("📈 美股实时分析推荐系统")
+st.title("📈 股票推荐与查询系统")
+
+# 推荐部分
+st.header("🔥 今日股票推荐")
+recommendation = fetch_recommendation()
+
+if recommendation:
+    for stock in recommendation:
+        symbol = stock["symbol"]
+        price = stock["price"]
+        reason = stock["reason"]
+        buy_price = stock["buy_price"]
+        sell_price = stock["sell_price"]
+
+        with st.container():
+            st.subheader(f"【{symbol}】当前价格: {price:.2f} USD")
+            st.markdown(f"推荐理由：{reason}")
+            st.markdown(f"建议买入价：{buy_price}，建议卖出价：{sell_price}")
+
+            df = fetch_stock_data(symbol)
+            if not df.empty:
+                st.markdown("📊 **交互式趋势图**")
+                st.components.v1.html(
+                    f"""
+                    <canvas id="chart_{symbol}"></canvas>
+                    <script>
+                        const ctx = document.getElementById('chart_{symbol}').getContext('2d');
+                        const chart = new Chart(ctx, {{
+                            type: 'line',
+                            data: {{
+                                labels: {df.index.strftime('%Y-%m-%d').tolist()},
+                                datasets: [{{
+                                    label: '{symbol} 收盘价',
+                                    data: {df['Close'].round(2).tolist()},
+                                    borderColor: 'rgba(75, 192, 192, 1)',
+                                    fill: false,
+                                    tension: 0.1
+                                }}]
+                            }},
+                            options: {{
+                                responsive: true,
+                                scales: {{
+                                    x: {{
+                                        display: true,
+                                        title: {{ display: true, text: '日期' }}
+                                    }},
+                                    y: {{
+                                        display: true,
+                                        title: {{ display: true, text: '价格 (USD)' }}
+                                    }}
+                                }}
+                            }}
+                        }});
+                    </script>
+                    """,
+                    height=300,
+                )
+else:
+    st.write("暂无合适推荐，稍后再试。")
+
 st.markdown("---")
 
-# 推荐逻辑
-with st.container():
-    st.subheader("今日推荐股票")
-    recommendations = recommend_stocks()
-    if recommendations:
-        for rec in recommendations:
-            st.markdown(f"**股票代码：** `{rec['symbol']}`")
-            st.markdown(f"**当前价格：** ${rec['price']}")
-            st.markdown(f"**买入建议价：** ${rec['buy']}")
-            st.markdown(f"**卖出建议价：** ${rec['sell']}")
-            st.markdown(f"**推荐理由：** {rec['reason']}")
-            st.markdown("---")
+# 查询部分
+st.header("🔍 股票查询")
+ticker_input = st.text_input("请输入美股/港股代码（如 AAPL 或 00700.HK）:")
+
+if ticker_input:
+    df = fetch_stock_data(ticker_input.upper())
+
+    if df.empty:
+        st.warning("无法获取数据，请检查代码是否正确。")
     else:
-        st.info("暂无合适推荐，稍后再试。")
+        st.subheader(f"【{ticker_input.upper()}】行情概览")
+        current_price = df["Close"][-1]
+        previous_close = df["Close"][-2] if len(df) > 1 else current_price
+        st.write(f"当前价格：{current_price:.2f} USD")
+        st.write(f"前一交易日收盘：{previous_close:.2f} USD")
 
-# 🔍 股票查询区
-st.subheader("🔎 个股分析查询")
-ticker = st.text_input("输入美股或港股代码（如 AAPL 或 00700.HK）")
+        indicators = calculate_indicators(df)
+        suggestion = format_analysis(indicators)
 
-if ticker:
-    try:
-        st.markdown(f"## 股票代码： `{ticker.upper()}`")
+        st.markdown("### 分析指标")
+        st.write(f"MACD: {indicators['MACD']:.2f}, Signal: {indicators['Signal']:.2f}")
+        st.write(f"RSI: {indicators['RSI']:.2f}")
+        st.write(f"KDJ: K={indicators['K']:.2f}, D={indicators['D']:.2f}, J={indicators['J']:.2f}")
+        st.write(f"Stochastic Oscillator: K={indicators['slowk']:.2f}, D={indicators['slowd']:.2f}")
 
-        # 1. 获取数据
-        price, df = fetch_latest_price(ticker), fetch_stock_data(ticker)
-        indicators = compute_indicators(df)
+        st.markdown("### 建议")
+        st.write(suggestion["advice"])
+        st.write(f"推荐买入价：{suggestion['buy_price']}, 卖出价：{suggestion['sell_price']}")
+        st.write(f"分析逻辑：{suggestion['reason']}")
 
-        # 2. 当前价格与收盘价展示
-        st.write(f"**当前价格：** ${price:.2f}")
-        st.write(f"**昨日收盘：** ${df['Close'].iloc[-2]:.2f}")
-        st.markdown("---")
-
-        # 3. 图表展示
-        st.plotly_chart(plot_candlestick_with_indicators(df, indicators), use_container_width=True)
-
-        # 4. 技术指标解读
-        macd_str = f"MACD: {indicators['MACD'][-1]:.2f}, Signal: {indicators['Signal'][-1]:.2f}"
-        rsi_str = f"RSI: {indicators['RSI'][-1]:.2f}"
-        st.write(f"📉 技术指标：{macd_str} | {rsi_str}")
-
-        # 5. 新闻与情绪
-        st.subheader("📰 最新相关新闻")
-        news_items = fetch_news(ticker)
-        if news_items:
-            for item in news_items[:5]:
-                st.markdown(f"- [{item['title']}]({item['url']})")
-        else:
-            st.info("暂无相关新闻")
-
-    except Exception as e:
-        st.error(f"加载股票数据失败：{str(e)}")
-
-else:
-    st.info("请输入股票代码以开始分析")
+        st.markdown("📊 **交互式趋势图表**")
+        st.components.v1.html(
+            f"""
+            <canvas id="chart_{ticker_input}"></canvas>
+            <script>
+                const ctx2 = document.getElementById('chart_{ticker_input}').getContext('2d');
+                const chart2 = new Chart(ctx2, {{
+                    type: 'line',
+                    data: {{
+                        labels: {df.index.strftime('%Y-%m-%d').tolist()},
+                        datasets: [{{
+                            label: '{ticker_input.upper()} 收盘价',
+                            data: {df['Close'].round(2).tolist()},
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            fill: false,
+                            tension: 0.1
+                        }}]
+                    }},
+                    options: {{
+                        responsive: true,
+                        scales: {{
+                            x: {{
+                                display: true,
+                                title: {{ display: true, text: '日期' }}
+                            }},
+                            y: {{
+                                display: true,
+                                title: {{ display: true, text: '价格 (USD)' }}
+                            }}
+                        }}
+                    }}
+                }});
+            </script>
+            """,
+            height=300,
+        )
