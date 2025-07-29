@@ -1,40 +1,183 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh">
 <head>
-    <title>股票分析</title>
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <meta charset="UTF-8">
+    <title>美股分析推荐系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            width: 90%;
+            max-width: 1200px;
+            margin: auto;
+            padding: 20px;
+        }
+        h2 {
+            color: #333;
+        }
+        form {
+            margin-bottom: 30px;
+        }
+        input[type="text"] {
+            padding: 10px;
+            width: 300px;
+            font-size: 16px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+        }
+        .result, .recommendation {
+            background: #fff;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        canvas {
+            margin-top: 20px;
+        }
+        .placeholder {
+            color: gray;
+        }
+    </style>
 </head>
 <body>
-    <h2>股票分析系统</h2>
-    <form method="post">
-        <input type="text" name="symbol" placeholder="输入股票代码" required>
-        <input type="submit" value="查询">
-    </form>
+    <div class="container">
+        <h2>📈 股票推荐</h2>
+        <div class="recommendation">
+            {% if recommended_stocks %}
+                {% for stock in recommended_stocks %}
+                    <h3>{{ stock.symbol }}</h3>
+                    <p>当前价格：{{ stock.current_price }} USD</p>
+                    <p>推荐理由：{{ stock.recommendation_reason }}</p>
+                    <p>建议买入价：{{ stock.buy_price }}，建议卖出价：{{ stock.sell_price }}</p>
+                {% endfor %}
+            {% else %}
+                <p class="placeholder">暂无合适推荐，稍后再试。</p>
+            {% endif %}
+        </div>
 
-    {% if stock %}
-        <h3>{{ stock.symbol or '' }} 当前价格: {{ stock.current }}</h3>
-        <p>建议：{{ stock.suggest }}</p>
-        <p>逻辑依据：{{ stock.logic }}</p>
-        <p>建议买入价：{{ stock.buy }}，卖出价：{{ stock.sell }}</p>
-    {% endif %}
+        <h2>🔍 个股查询</h2>
+        <form method="post">
+            <input type="text" name="stock_symbol" placeholder="输入股票代码（如 AAPL）" required>
+            <button type="submit">查询</button>
+        </form>
 
-    {% if kline.t %}
-        <div id="chart"></div>
-        <script>
-            var trace = {
-                x: {{ kline.t | safe }},
-                y: {{ kline.c | safe }},
-                mode: 'lines',
-                name: '收盘价'
-            };
-            Plotly.newPlot('chart', [trace]);
-        </script>
-    {% endif %}
+        {% if stock_data %}
+        <div class="result">
+            <h3>{{ stock_data.symbol }}</h3>
+            <p>当前价格：{{ stock_data.current_price }} USD</p>
+            <p>前一交易日收盘：{{ stock_data.previous_close }} USD</p>
+            <p>最新获取时间：{{ stock_data.fetched_time }}</p>
+            <p>MACD: {{ stock_data.macd }}，Signal: {{ stock_data.signal }}</p>
+            <p>RSI: {{ stock_data.rsi }}</p>
+            <p>KDJ: K={{ stock_data.kdj_k }}，D={{ stock_data.kdj_d }}，J={{ stock_data.kdj_j }}</p>
+            <p>Stochastic: K={{ stock_data.stochastic_k }}，D={{ stock_data.stochastic_d }}</p>
+            <p>建议：{{ stock_data.suggestion }}</p>
+            <p>推荐买入价：{{ stock_data.buy_price }}，卖出价：{{ stock_data.sell_price }}</p>
+            <p>分析逻辑：{{ stock_data.recommendation_reason }}</p>
 
-    {% if recommend %}
-        <h4>推荐股票：{{ recommend.symbol }}</h4>
-        <p>价格：{{ recommend.price }}，建议买入：{{ recommend.suggest_buy }}，卖出：{{ recommend.suggest_sell }}</p>
-        <p>理由：{{ recommend.reason }}</p>
-    {% endif %}
+            <canvas id="priceChart"></canvas>
+            <canvas id="macdChart"></canvas>
+            <canvas id="kdjChart"></canvas>
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        {% if stock_data and stock_data.chart %}
+            const priceChart = document.getElementById('priceChart').getContext('2d');
+            new Chart(priceChart, {
+                type: 'line',
+                data: {
+                    labels: {{ stock_data.chart.dates|tojson }},
+                    datasets: [{
+                        label: '价格走势',
+                        data: {{ stock_data.chart.prices|tojson }},
+                        borderColor: 'blue',
+                        fill: false,
+                        tension: 0.2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: { display: true },
+                        y: { display: true }
+                    }
+                }
+            });
+
+            const macdChart = document.getElementById('macdChart').getContext('2d');
+            new Chart(macdChart, {
+                type: 'line',
+                data: {
+                    labels: {{ stock_data.chart.dates|tojson }},
+                    datasets: [
+                        {
+                            label: 'MACD',
+                            data: {{ stock_data.chart.macd|tojson }},
+                            borderColor: 'green',
+                            fill: false
+                        },
+                        {
+                            label: 'Signal',
+                            data: {{ stock_data.chart.signal|tojson }},
+                            borderColor: 'red',
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: { display: true },
+                        y: { display: true }
+                    }
+                }
+            });
+
+            const kdjChart = document.getElementById('kdjChart').getContext('2d');
+            new Chart(kdjChart, {
+                type: 'line',
+                data: {
+                    labels: {{ stock_data.chart.dates|tojson }},
+                    datasets: [
+                        {
+                            label: 'K',
+                            data: {{ stock_data.chart.kdj_k|tojson }},
+                            borderColor: 'orange',
+                            fill: false
+                        },
+                        {
+                            label: 'D',
+                            data: {{ stock_data.chart.kdj_d|tojson }},
+                            borderColor: 'purple',
+                            fill: false
+                        },
+                        {
+                            label: 'J',
+                            data: {{ stock_data.chart.kdj_j|tojson }},
+                            borderColor: 'gray',
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: { display: true },
+                        y: { display: true }
+                    }
+                }
+            });
+        {% endif %}
+    </script>
 </body>
 </html>
