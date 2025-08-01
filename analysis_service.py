@@ -178,4 +178,23 @@ def get_trending_stocks() -> pd.DataFrame:
                     '股票代码': ticker,
                     '公司名称': info.get('longName', ticker),
                     '当前价格': info.get('currentPrice', 0),
-                    '涨跌幅': monthly_return,  # 使用实际计算的月度
+                    '涨跌幅': monthly_return,  # 使用实际计算的月度涨跌幅
+                    'RSI': round(rsi, 2),
+                    'MACD': round(macd, 4),
+                    '市场情绪': sentiment,
+                    '情绪分数': sentiment_score,
+                    '推荐得分': round(score),
+                    '买入建议': "强烈买入" if score > 80 else "买入" if score > 60 else "观望" if score > 40 else "谨慎" if score > 20 else "卖出"
+                })
+            except Exception as e:
+                logger.warning(f"处理股票 {ticker} 失败: {e}")
+                continue
+        
+        # 按推荐得分降序排序
+        df = pd.DataFrame(trending_data)
+        if not df.empty:
+            df = df.sort_values(by='推荐得分', ascending=False)
+        return df
+    except Exception as e:
+        logger.error(f"获取热门股票失败: {e}")
+        return pd.DataFrame()
