@@ -1,110 +1,67 @@
 import streamlit as st
-import yfinance as yf
-import pandas as pd
-from utils.stock_utils import (
-    fetch_recommendation,
-    fetch_stock_data,
-    calculate_indicators,
-    format_analysis
-)
 
-st.set_page_config(layout="wide")
+from config import CONFIG, HOT_STOCKS, DEFAULT_TICKER
+from page_realtime import render_realtime_page
+from page_technical import render_technical_page
+from page_advice import render_advice_page
+from page_trending import render_trending_page
+from page_news import render_news_page
 
-st.title("📈 股票推荐与查询系统")
+# -------------------- 回调函数 --------------------
+def update_current_ticker():
+    """更新当前选中的股票代码"""
+    if st.session_state.search_input and st.session_state.search_input != st.session_state.current_ticker:
+        st.session_state.current_ticker = st.session_state.search_input
 
-# 推荐部分
-st.header("🔥 今日股票推荐")
-recommendation = fetch_recommendation()
+# -------------------- 主应用 --------------------
+def main():
+    st.set_page_config(page_title=CONFIG['page_title'], layout='wide')
+    st.sidebar.title("🚀 智能股票分析")
+    st.sidebar.markdown("---")
+    
+    # 使用会话状态跟踪当前选中的股票
+    if 'current_ticker' not in st.session_state:
+        st.session_state.current_ticker = DEFAULT_TICKER  # 默认股票
+    
+    # 股票代码输入
+    st.sidebar.markdown("### 🔍 股票查询")
+    
+    # 使用on_change回调处理回车提交
+    st.sidebar.text_input(
+        "输入股票代码", 
+        value=st.session_state.current_ticker,
+        help="美股: TSLA | 港股: 0700（4位数字）",
+        key="search_input",
+        on_change=update_current_ticker
+    )
+    
+    # 热门股票快速访问
+    st.sidebar.markdown("**🚀 热门股票**")
+    hot_cols = st.sidebar.columns(3)
+    for i, stock in enumerate(HOT_STOCKS):
+        if hot_cols[i % 3].button(stock, use_container_width=True):
+            st.session_state.current_ticker = stock
+            st.rerun()
+    
+    st.sidebar.markdown("---")
+    page = st.sidebar.radio("📋 功能菜单", [
+        "📊 实时数据", "📈 技术分析", 
+        "🎯 投资建议", "🌟 热门股票", "📰 新闻"
+    ])
+    
+    # 使用会话状态中的当前股票进行查询
+    active_ticker = st.session_state.current_ticker
+    
+    if page == "📊 实时数据":
+        render_realtime_page(active_ticker)
+    elif page == "📈 技术分析":
+        render_technical_page(active_ticker)
+    elif page == "🎯 投资建议":
+        render_advice_page(active_ticker)
+    elif page == "🌟 热门股票":
+        render_trending_page()
+    elif page == "📰 新闻":
+        render_news_page(active_ticker)
 
-if recommendation:
-    for stock in recommendation:
-        symbol = stock["symbol"]
-        price = stock["price"]
-        reason = stock["reason"]
-        buy_price = stock["buy_price"]
-        sell_price = stock["sell_price"]
-
-        st.subheader(f"【{symbol}】当前价格: {price:.2f} USD")
-        st.markdown(f"推荐理由：{reason}")
-        st.markdown(f"建议买入价：{buy_price}，建议卖出价：{sell_price}")
-
-        df = fetch_stock_data(symbol)
-        if not df.empty:
-            st.components.v1.html(f"""
-            <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-            <canvas id="chart_{symbol}"></canvas>
-            <script>
-                const ctx = document.getElementById("chart_{symbol}").getContext("2d");
-                new Chart(ctx, {{
-                    type: "line",
-                    data: {{
-                        labels: {df.index.strftime('%Y-%m-%d').tolist()},
-                        datasets: [{{
-                            label: "{symbol} 收盘价",
-                            data: {df["Close"].round(2).tolist()},
-                            borderColor: "rgba(75, 192, 192, 1)",
-                            fill: false
-                        }}]
-                    }},
-                    options: {{
-                        responsive: true,
-                        plugins: {{
-                            legend: {{ display: true }},
-                        }}
-                    }}
-                }});
-            </script>
-            """, height=300)
-else:
-    st.write("暂无推荐")
-
-st.markdown("---")
-
-# 查询部分
-st.header("🔍 股票查询")
-ticker_input = st.text_input("请输入股票代码（如 AAPL 或 00700.HK）:")
-
-if ticker_input:
-    ticker = ticker_input.strip().upper()
-    df = fetch_stock_data(ticker)
-
-    if df.empty:
-        st.warning("无法获取数据，请检查代码。")
-    else:
-        st.subheader(f"【{ticker}】行情概览")
-        st.write(f"当前价格：{df['Close'][-1]:.2f} USD")
-        indicators = calculate_indicators(df)
-        suggestion = format_analysis(indicators)
-
-        st.markdown("### 分析指标")
-        st.write(f"MACD: {indicators['MACD']:.2f}, Signal: {indicators['Signal']:.2f}")
-        st.write(f"RSI: {indicators['RSI']:.2f}")
-        st.write(f"KDJ: K={indicators['K']:.2f}, D={indicators['D']:.2f}, J={indicators['J']:.2f}")
-
-        st.markdown("### 建议")
-        st.write(suggestion["advice"])
-        st.write(f"建议买入价：{suggestion['buy_price']}, 卖出价：{suggestion['sell_price']}")
-        st.write(f"理由：{suggestion['reason']}")
-
-        st.components.v1.html(f"""
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-        <canvas id="chart_{ticker}"></canvas>
-        <script>
-            const ctx = document.getElementById("chart_{ticker}").getContext("2d");
-            new Chart(ctx, {{
-                type: "line",
-                data: {{
-                    labels: {df.index.strftime('%Y-%m-%d').tolist()},
-                    datasets: [{{
-                        label: "{ticker} 收盘价",
-                        data: {df["Close"].round(2).tolist()},
-                        borderColor: "rgba(255, 99, 132, 1)",
-                        fill: false
-                    }}]
-                }},
-                options: {{
-                    responsive: true
-                }}
-            }});
-        </script>
-        """, height=300)
+if __name__ == "__main__":
+    main()
