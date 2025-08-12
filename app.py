@@ -6,6 +6,7 @@ import requests
 from datetime import datetime, timedelta
 import os
 import logging
+from typing import Tuple  # 添加缺失的类型导入
 
 # -------------------- 配置信息 --------------------
 CONFIG = {
